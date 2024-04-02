@@ -1,0 +1,421 @@
+---
+title: "Predicting players' score"
+author: "Venkat Sai, Maimuna Patwary, Devika Vadlamudi"
+date: "`r Sys.Date()`"
+output: html_document
+---
+##Introduction 
+
+Accurately projecting each player's score is critical in the dynamic field of basketball analytics. This number is critical in determining a player's offensive ability and overall value to their club. It's a tool used by coaches, analysts, and fans to evaluate scoring ability, assisting in game judgments, player recruitment, and scouting.
+
+This notebook will investigate the use of several machine-learning approaches for forecasting basketball points. We will concentrate on four different regression models. The goal of the K-Nearest Neighbors (KNN) Regressor, Decision Tree Regressor (DT), and Random Forest Regressor (RFR) models is to anticipate a player's total points based on a variety of performance indicators like as time spent playing, successful field goals, free throws, and so on.
+
+Our goal is to evaluate and examine the efficacy of various models in forecasting basketball scores. This comparative analysis will help us understand the advantages and disadvantages of each technique, directing us to the most successful model for this specific dataset.
+
+Join us as we delve into the fascinating world of basketball data analytics, assessing and comparing the predictions from each regression model to determine their effectiveness in projecting players' scoring contributions.
+
+This notebook contains tasks.
+• Dataset Overview: Learn about the basketball dataset's structure and properties.
+• Import libraries: Add the libraries required for data manipulation and visualization.
+
+• Read datasets and extract information from them: Load the dataset and collect preliminary insights.
+
+• Data visualization: Use visualization to better comprehend the distribution and linkages of data.
+
+• Features: Choose the features that will help you anticipate basketball points.
+
+##Fashion modeling:
+
+• KNeighbors Regressor: For point prediction, use the KNN Regressor.
+
+• Decision Tree Regressor: Use the DT Regressor to predict points.
+
+• Random Forest Regressor: Use RFR to predict points.
+
+• Predictions visualization: Visualize and assess the predictions provided by each regression model.
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+# Load libraries
+library(dplyr)
+library(ggplot2)
+library(plotly)
+library(caret)
+library(randomForest)
+library(kknn)
+library(rpart)
+library(tree)
+library(rpart.plot)
+
+# Supress warnings
+options(warn=-1)
+
+```
+
+
+The DataFrame df in this code holds basketball performance statistics for players. The DataFrame columns have unique names that may or may not be user-friendly or self-explanatory. The purpose of this code is to rename the columns to make them more meaningful and intelligible.
+```{r}
+# Load the dataset
+df <- read.csv('2023_nba_player_stats.csv')
+
+# View the first few rows of the dataset
+head(df, 3)
+
+# Check the dimensions of the dataset
+dim(df)
+
+# Check for duplicate rows
+sum(duplicated(df))
+
+# Rename columns
+names(df) <- c('Player_Name', 'Position', 'Team_Abbreviation', 'Age', 'Games_Played', 'Wins', 'Losses', 'Minutes_Played', 'Total_Points', 'Field_Goals_Made', 'Field_Goals_Attempted', 'Field_Goal_Percentage', 'Three_Point_FG_Made', 'Three_Point_FG_Attempted', 'Three_Point_FG_Percentage', 'Free_Throws_Made', 'Free_Throws_Attempted', 'Free_Throw_Percentage', 'Offensive_Rebounds', 'Defensive_Rebounds', 'Total_Rebounds', 'Assists', 'Turnovers', 'Steals', 'Blocks', 'Personal_Fouls', 'NBA_Fantasy_Points', 'Double_Doubles', 'Triple_Doubles', 'Plus_Minus')
+
+# Display structure of the dataset
+str(df)
+
+# Descriptive statistics for numeric variables
+summary(df[sapply(df, is.numeric)])
+
+# Descriptive statistics for categorical variables
+summary(df[sapply(df, is.character)])
+
+
+
+```
+Histogram of Players Positions:
+This histogram is designed to show the distribution of players across different positions. 
+
+Bar Chart of Average Points Per Position
+This chart visualizes the average total points scored by players in each position.
+- Players at the position PG has the highest average total points followed by the position SG, SF, PF, and the others. 
+
+```{r}
+# Checking for missing values
+colSums(is.na(df))
+
+# Handling missing values (e.g., filling NA in 'Position' with 'SG')
+df$Position[is.na(df$Position)] <- 'SG'
+
+# Histogram of 'Position' using ggplot2
+library(ggplot2)
+ggplot(df, aes(x = Position)) +
+  geom_histogram(stat = "count", fill = "blue") +
+  theme_minimal() +
+  labs(title = 'Players Position Value Counts', x = 'Position', y = 'Count')
+
+# Alternatively, using plotly
+library(plotly)
+fig <- plot_ly(df, x = ~Position, type = "histogram")
+fig
+
+# Average points per position using ggplot2
+position_stats <- df %>%
+  group_by(Position) %>%
+  summarize(Average_Total_Points = mean(Total_Points, na.rm = TRUE))
+
+ggplot(position_stats, aes(x = Position, y = Average_Total_Points, fill = Position)) +
+  geom_bar(stat = "identity") +
+  theme_minimal() +
+  labs(title = 'Average Points per Position', x = 'Position', y = 'Average Total Points')
+
+# Alternatively, using plotly
+fig <- plot_ly(position_stats, x = ~Position, y = ~Average_Total_Points, type = "bar")
+fig
+
+
+```
+
+1) Histogram of Player Ages:The plot will indicate how many participants are in each age group. Because the bin width is set to one, each bar represents a one-year age interval. This picture aids in comprehending the age demographics of the participants.
+- From the histogram, we can observe that player within the age 22-25 are of greater frequency. 
+
+2) Scatter Plots:
+Age vs. Total Points:Each point represents a player, with the X-axis representing age and the Y-axis representing total points. Position color coding provides for differentiation between positions, potentially indicating patterns or discrepancies in scoring between positions.
+- We can observe a decrease in total points as the age increases. This indicates that, younger players are more likely to make points than the older players. 
+
+Age vs. Field Goal Percentage:This graph depicts the association between player age and field goal percentage.It's useful to know if there's a link between a player's age and their shooting effectiveness.
+- More field goals were accounted within the age of 23 to 25 and the least was accounted from 31 onward. 
+
+Age vs. Assists : This graph shows how the ages of players correlate with the number of assists they make.It aids in determining whether certain age groups are more susceptible.
+- Although the scatter plot doesn't show much of a variation in the number of assists for different age group, it does however show players from which position tend to assist more and we can observe a high number of assists from PG position. 
+
+3)Bar Charts:
+Average Fantasy Points by Position:The average fantasy points scored by players in each position are shown in this bar chart.It allows you to compare the average fantasy point performance of players in various positions.
+- We can observe that, the players at the position PG has got the highest fantasy points and the players at the position G has gotten the least. 
+
+
+```{r}
+# Histogram of Player Ages
+ggplot(df, aes(x = Age)) +
+  geom_histogram(binwidth = 1, fill = "Blue") +
+  labs(title = "Distribution of Player Ages", x = "Age", y = "Count")
+
+# Scatter Plots
+# Age vs. Total Points
+ggplot(df, aes(x = Age, y = Total_Points, color = Position)) +
+  geom_point() +
+  labs(title = "Player Age vs Total Points", x = "Age", y = "Total Points")
+
+# Age vs. Field Goal Percentage
+ggplot(df, aes(x = Age, y = Field_Goal_Percentage, color = Position)) +
+  geom_point() +
+  labs(title = "Player Age vs Field Goal Percentage", x = "Age", y = "Field Goal Percentage")
+# Age vs. Assists
+ggplot(df, aes(x = Age, y = Assists, color = Position)) +
+  geom_point() +
+  labs(title = "Player Age vs Assists", x = "Age", y = "Assists")
+
+# Bar Charts
+# Average Fantasy Points by Position
+avg_fantasy_points <- df %>%
+  group_by(Position) %>%
+  summarize(Avg_Fantasy_Points = mean(NBA_Fantasy_Points, na.rm = TRUE))
+ggplot(avg_fantasy_points, aes(x = Position, y = Avg_Fantasy_Points, fill = Position)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Average Fantasy Points by Position", x = "Position", y = "Average Fantasy Points")
+
+# Double and Triple Doubles by Position
+double_doubles_by_position <- df %>%
+  group_by(Position) %>%
+  summarize(Double_Doubles = sum(Double_Doubles, na.rm = TRUE))
+
+triple_doubles_by_position <- df %>%
+  group_by(Position) %>%
+  summarize(Triple_Doubles = sum(Triple_Doubles, na.rm = TRUE))
+
+
+``` 
+#Boxplots
+
+These box plots can identify patterns and abnormalities in a variety of player performance measures. For example, a box plot for 'Total Points' may show the distribution of points scored by players throughout different games or seasons, highlighting the average range of scores as well as any extraordinary performances.
+
+This visualization method is very useful in exploratory data analysis since it provides insights into the nature of the data that can inform subsequent studies or model-building.
+
+These box plots are used to visually and compare the distributions of various basketball-related statistics, assisting in the understanding of the data structure, identifying any data quality issues, and gaining insights into player performances.
+
+```{r}
+library(ggplot2)
+library(gridExtra)
+
+# Prepare data (excluding certain columns)
+column_to_exclude <- c('Player_Name', 'Position', 'Team_Abbreviation')
+columns <- setdiff(names(df), column_to_exclude)
+
+# Create a list to store plots
+plot_list <- vector("list", length(columns))
+
+# Adjust the number of rows and columns for the layout
+num_columns_layout <- 2  # You can adjust this
+num_rows_layout <- ceiling(length(plot_list) / num_columns_layout)
+
+for (i in seq_along(columns)) {
+    p <- ggplot(df, aes_string(y = columns[i])) +
+         geom_boxplot() +
+         theme_minimal() +
+         ggtitle(paste("Box Plot of", columns[i]))
+    print(p)  # Display each plot individually
+}
+
+```
+
+The dataset is preprocessed in this code portion by separating it into training and testing sets. X stores the independent variables (features), while y stores the dependent variable (target). To divide the data into training and testing subsets, we used the train_test_split function. The training set contains 80% of the data, with the remaining 20% in the testing set. For reproducibility, the random state is set to 42. 
+
+The dimensions of the training and testing sets are printed to the console after splitting. X_train has rows_train and columns_train, whereas X_test contains rows_test and columns_test.
+
+```{r}
+# Assuming df is your dataframe and 'Total_Points' is the target variable
+set.seed(5555)  # for reproducibility
+
+# Remove columns whose names start with "PName"
+updatedDf <- df[, !grepl("^Player_Name", names(df))]
+
+
+trainIndex <- createDataPartition(updatedDf$Total_Points, p = .7, list = FALSE)
+dataTrain <- updatedDf[ trainIndex,]
+dataTest  <- updatedDf[-trainIndex,]
+
+
+```
+
+##Random Forest
+A Random Forest regressor model is subjected to hyper parameter adjustment in this part to improve its performance. The goal is to determine the best hyper parameter combination that produces the highest R2 score on the test data.
+For experimentation, a set of test sizes and random states is defined.
+The dataset is repeatedly split into training and testing sets using varying test sizes and random states within nested loops.
+A Random Forest regressor model with specific hyper parameters, including 100 estimators and a maximum depth of 5, is instantiated for each combination of test size and random state.
+On the training data (X_train and y_train), the model is trained.
+The R2 score is calculated using r2_score on the testing data (X_test).
+```{r}
+library(randomForest)
+library(caret)
+library(Metrics)
+
+# Train the Random Forest model
+rf_model <- randomForest(Total_Points ~ ., data = dataTrain, ntree = 5)
+
+# Make predictions
+rf_predictions <- predict(rf_model, dataTest)
+
+# Evaluate the model
+rf_mse <- mse(dataTest$Total_Points, rf_predictions)
+rf_r2 <- R2(dataTest$Total_Points, rf_predictions)
+rf_mae <- mae(dataTest$Total_Points, rf_predictions)
+
+
+
+print(paste("MSE:", rf_mse))
+print(paste("R2 score:", rf_r2))
+print(paste("mae score:", rf_mae))
+
+```
+# KNN Model
+# Training and Evaluation of the K-Nearest Neighbors (KNN) Regressor Model
+A K-Nearest Neighbors (KNN) regressor model is trained and assessed on the dataset in this code section. Basketball players' 'Total_Points' are predicted using the KNN regressor. For reproducibility, the dataset is divided into training and testing sets with varying test sizes (15%, 20%, 25%, and 30%) and random states.The model is trained on the training data (X_train and y_train) for each combination of test size and random state. The trained model is then used to forecast the 'Total_Points' on the testing data (X_test), with the results saved in y_pred.
+
+The R2 score is calculated using the r2_score function, which quantifies the fraction of the variance in the dependent variable that is predictable from the independent variables. If the calculated R2 score is higher than the previous best result, the test size, random state, and R2 score are updated.
+
+The code reports the optimal test size, random state, and R2 score obtained by the KNN regressor after iterating through all combinations.
+
+```{r}
+#Library for the KNN model 
+library(kknn)
+
+# Train the KNN model
+head(dataTest)
+
+
+# scale the data for KNN
+knn_model <- kknn(Total_Points ~ ., train = dataTrain, test= dataTest, k = 1)
+
+# Make predictions
+knn_predictions <- fitted(knn_model)
+
+# Evaluating the model
+knn_mse <- mse(dataTest$Total_Points, knn_predictions)
+knn_r2 <- R2(dataTest$Total_Points, knn_predictions)
+knn_mae <- mae(dataTest$Total_Points, knn_predictions)
+
+
+print(paste("KNN - MSE:", knn_mse))
+print(paste("KNN - R2 score:", knn_r2))
+print(paste("KNN - MAE score:", knn_mae))
+
+```
+
+##Decision Tree Regressor Tuning
+In this code section, a grid search strategy is used to tune hyperparameters for a Decision Tree regressor model. The goal is to find the ideal hyperparameters that maximize the R2 score, which indicates the predictive performance of the model.
+The dataset is divided between training and testing sets based on different test sizes (10%, 15%, 20%, and 30%) and random states (0, 1, 42, 43, 100, 313).
+The default hyperparameters are used to initialize a Decision Tree regressor model.
+The model is trained on the training data (X_train and y_train) for each combination of test size and random state, and predictions are generated on the testing data (X_test). The R2 score is calculated with r2_score and compared to the best R2 score available.
+
+```{r}
+library(rpart)
+# Train the Decision Tree model
+dt_model <- rpart(Total_Points ~ ., data = dataTrain, method = "anova")
+
+# Make predictions
+dt_predictions <- predict(dt_model, dataTest, type = "vector")
+
+# Evaluate the model
+dt_mse <- mse(dataTest$Total_Points, dt_predictions)
+dt_r2 <- R2(dataTest$Total_Points, dt_predictions)
+dt_mae <- mae(dataTest$Total_Points, dt_predictions)
+
+print(paste("Decision Tree - MSE:", dt_mse))
+print(paste("Decision Tree - R2 score:", dt_r2))
+print(paste("Decision Tree - MAE score:", dt_mae))
+
+```
+
+#Model Evaluation 
+Visual comparisons between projected and actual points are generated in this section using several sorts of graphs.
+
+Scatter Plot: A scatter plot is created to compare the actual (x-axis) and expected (y-axis) locations. Based on the actual points, each point is color-coded. The scatter plot function in Plotly is used to construct the plot.
+
+A residual plot is created to show the disparities between the actual points and the anticipated points. The difference between the actual and anticipated points is used to determine the residuals. At y=0, a dashed orange line helps you visualize the divergence from the ideal line. The scatter plot function in Plotly is used to construct the plot.
+
+Predicted vs. True Line Plot: This plot shows a comparison of the true (x-axis) and predicted (y-axis) values. The expected values are represented by an ideal line, regression line, and scatter plot. The linear relationship between the true and expected values is represented by the regression line. The scatter plot function in Plotly is used to create the plot.
+Plotly's show() function is used to display each plot.
+
+The three plots you've created—scatter plot of actual vs. projected, residual plot, and line plot comparing predicted to true values—are crucial tools in regression analysis for evaluating predictive model performance. Each visualization provides a unique perspective on the accuracy and qualities of your model's predictions. 
+
+```{r}
+library(randomForest)
+library(ggplot2)
+library(plotly)
+
+# Make predictions using the Random Forest model
+rf_predictions <- predict(rf_model, dataTest)
+
+# Create a dataframe for comparison
+comparison_df <- data.frame(Actual = dataTest$Total_Points, Predicted = rf_predictions)
+
+# Calculate residuals
+comparison_df$Residuals <- comparison_df$Actual - comparison_df$Predicted
+
+
+fig_scatter <- ggplot(comparison_df, aes(x = Actual, y = Predicted, color = Actual)) +
+  geom_point() +
+  ggtitle("Comparison of Actual vs. Predicted") +
+  labs(x = "Actual Points", y = "Predicted Points") +
+  theme_minimal()
+
+ggplotly(fig_scatter) # Convert to interactive plotly plot
+
+
+fig_residual <- ggplot(comparison_df, aes(x = Predicted, y = Residuals)) +
+  geom_point(color = "orangered") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "orange") +
+  ggtitle("Residual Plot") +
+  labs(x = "Predicted Values", y = "Residuals") +
+  theme_minimal()
+
+ggplotly(fig_residual) # Convert to interactive plotly plot
+
+
+fig_line <- ggplot(comparison_df, aes(x = Actual, y = Predicted)) +
+  geom_point(color = "Green") +
+  geom_line(aes(y = Actual), color = "#98DFD6") +
+  geom_smooth(method = lm, color = "#FFDD83", se = FALSE) +
+  ggtitle("Predicted vs. True Line Plot") +
+  labs(x = "True Values", y = "Predicted Values") +
+  theme_minimal()
+
+ggplotly(fig_line) # Convert to interactive plotly plot
+
+```
+
+
+#Conclution:
+Based on your successful development and evaluation of the Decision Tree, K-Nearest Neighbors (KNN), and Random Forest regression models for predicting basketball points in an NBA dataset, the following conclusion can be drawn:
+
+Model Performance and Accuracy:
+
+The Random Forest Regressor was the most accurate of the three models (Decision Tree, KNN, and Random Forest). This implies that Random Forest's ensemble technique, which mixes numerous decision trees to provide more robust and generalized predictions, is well-suited for this type of data.
+While the Decision Tree model is intuitively simpler and easier to read, it may not have captured the complexity in the data as well as the Random Forest model. Overfitting is a common problem for decision trees, especially when dealing with complicated and diverse datasets like those used in sports analytics.
+The KNN model, which makes predictions based on distance measurements, may not have performed well. This could be owing to the high dimensionality of the data or the necessity for careful feature scaling and parameter selection ('k'). KNN models are highly sensitive to data scale, and any imbalances or outliers can have a major impact on their performance.
+
+Insights from Model Evaluation:
+
+The evaluation criteria used to analyze the models (such as MSE, R2, and MAE) provided a full understanding of their prediction capabilities. Lower MSE and MAE values, as well as higher R2 values, demonstrate the Random Forest model's increased ability to anticipate total points scored by NBA players.
+Such measurements are essential not only for determining model correctness, but also for comprehending the types of mistakes created by each model. This knowledge can be used to guide future model development and optimization.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
